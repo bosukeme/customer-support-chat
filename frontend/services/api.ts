@@ -12,14 +12,12 @@ export const api = axios.create({
 
 
 export const chatApi = {
-
   async startConversation() {
     const response = await api.post("/api/chat/conversations/", {});
     console.log(response);
 
     const conversationId = response.data.id;
     return conversationId;
-
   },
 
   async getConversations() {
@@ -27,7 +25,7 @@ export const chatApi = {
     const data = res.data;
     return data;
   },
-  
+
   // Fetch message history for a given conversation
   async getMessages(conversationId: string) {
     const res = await api.get(`/api/chat/messages/${conversationId}/`);
@@ -49,4 +47,11 @@ export const chatApi = {
   async closeConversation(convId: string) {
     return api.post(`/api/chat/agents/close/${convId}/`);
   },
+
+  async getSupervisorConversations() {
+    const res = await api.get("/api/chat/supervisor/conversations/");
+    console.log(res);
+    
+    return res.data;
+  }
 };

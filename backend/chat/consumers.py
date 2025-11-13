@@ -1,6 +1,7 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
+from django_redis import get_redis_connection
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -13,13 +14,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         self.group_name = f"conversation_{self.conversation_id}"
         user = self.scope['user']
-        print(user)
+        print("Connecting user:", user)
         if not user.is_authenticated:
             await self.close()
             return
 
         can_join = await self.user_can_join(user, self.conversation_id)
-
         if not can_join:
             await self.close()
             return
@@ -28,8 +28,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.group_name,
             self.channel_name
         )
-
         await self.accept()
+
+        redis_conn = get_redis_connection("default")
+        redis_conn.hset("online_users", user.username, user.role)
+
+        await self.channel_layer.group_send(
+            "presence_updates",
+            {
+                "type": "user_online",
+                "user": user.username,
+                "role": user.role,
+            },
+        )
 
         await self.channel_layer.group_send(
             self.group_name,
@@ -42,9 +53,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
 
     async def disconnect(self, close_code):
+        user = self.scope["user"]
+
+        redis_conn = get_redis_connection("default")
+        redis_conn.hdel("online_users", user.username)
+
         await self.channel_layer.group_discard(
             self.group_name,
             self.channel_name
+        )
+
+        await self.channel_layer.group_send(
+            "presence_updates",
+            {
+                "type": "user_offline",
+                "user": user.username,
+            },
         )
 
     async def receive(self, text_data):
@@ -104,6 +128,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "type": "user.join",
             "user": event["user"],
             "role": event["role"],
+        }))
+
+    async def user_online(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "presence.online",
+            "user": event["user"],
+            "role": event["role"]
+        }))
+
+    async def user_offline(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "presence.offline",
+            "user": event["user"]
         }))
 
     @database_sync_to_async
