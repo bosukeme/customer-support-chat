@@ -164,7 +164,6 @@ export default function AgentPage() {
 
     return (
         <div className="flex flex-col min-h-screen bg-blue-100">
-            <Navbar />
             <div className="flex flex-1">
                 <Sidebar
                     activeTab={activeTab}

@@ -1,11 +1,16 @@
 import json
+import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django_redis import get_redis_connection
+from .tasks import notify_offline_user
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+
+        self.client_id_set = set()
+
         self.conversation_id = (self.scope['url_route']
                                 ['kwargs']
                                 ['conversation_id'])
@@ -72,6 +77,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
 
     async def receive(self, text_data):
+
+        redis_conn = get_redis_connection("default")
         data = json.loads(text_data)
         user = self.scope["user"]
         msg_type = data.get("type")
@@ -91,6 +98,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         if msg_type == "message":
             message = data.get("message", "").strip()
+            client_id = data.get("client_id") or str(uuid.uuid4())
+
+            if client_id in self.client_id_set:
+                return
+            self.client_id_set.add(client_id)
 
             if not message:
                 return
@@ -99,15 +111,50 @@ class ChatConsumer(AsyncWebsocketConsumer):
             msg_obj = await self.save_message(user, self.conversation_id,
                                               message)
 
+            conversation = await self.get_conversation(self.conversation_id)
+
+            if user.role == "CUSTOMER":
+                recipient = conversation.agent
+            else:
+                recipient = conversation.customer
+
+            status = "sent"
+
+            if recipient:
+
+                is_online = redis_conn.hexists(
+                    "online_users", recipient.username)
+
+                if is_online:
+                    await self.mark_as_delivered(msg_obj.id)
+                    status = "delivered"
+                else:
+                    notify_offline_user.delay(recipient.email, message)
+
             await self.channel_layer.group_send(
                 self.group_name,
                 {
                     "type": "chat.message",
+                    "id": msg_obj.id,
                     "content": message,
                     "sender": user.username,
                     "timestamp": msg_obj.timestamp.isoformat(),
+                    "status": status,
                 },
             )
+
+        elif msg_type == "message.read":
+            message_id = data.get("id")
+            try:
+                await self.mark_as_read(message_id)
+                await self.channel_layer.group_send(
+                    self.group_name,
+                    {"type": "chat.read", "id": message_id,
+                     "reader": user.username},
+                )
+            except Exception:
+                # Safe fail if message not found
+                print(f"Message {message_id} not found to mark as read.")
 
     async def chat_typing(self, event):
         await self.send(text_data=json.dumps({
@@ -118,9 +165,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
             "type": "message",
+            "id": event["id"],
             "content": event["content"],
             "sender": event["sender"],
             "timestamp": event["timestamp"],
+            "status": event["status"],
+        }))
+
+    async def chat_read(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "message.read",
+            "id": event["id"],
+            "reader": event["reader"],
         }))
 
     async def chat_join(self, event):
@@ -149,7 +205,29 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         conversation = Conversation.objects.get(id=conversation_id)
         return Message.objects.create(conversation=conversation, sender=user,
-                                      content=message)
+                                      content=message, status="sent")
+
+    @database_sync_to_async
+    def mark_as_read(self, message_id):
+        from .models import Message
+        try:
+            msg = Message.objects.get(id=message_id)
+            if msg.status != "read":
+                msg.status = "read"
+                msg.save()
+        except Message.DoesNotExist:
+            pass
+
+    @database_sync_to_async
+    def mark_as_delivered(self, message_id):
+        from .models import Message
+        try:
+            msg = Message.objects.get(id=message_id)
+            if msg.status == "sent":
+                msg.status = "delivered"
+                msg.save()
+        except Message.DoesNotExist:
+            pass
 
     @database_sync_to_async
     def user_can_join(self, user, conversation_id):
@@ -166,6 +244,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return False
         except Conversation.DoesNotExist:
             return False
+
+    @database_sync_to_async
+    def get_conversation(self, conversation_id):
+        from .models import Conversation
+        return Conversation.objects.get(id=conversation_id)
 
     # @database_sync_to_async
     # def user_in_conversation(self, user, conversation_id):

@@ -8,6 +8,7 @@ interface Message {
     content?: string;
     type?: string;   // For typing events
     user?: string;
+    status: string;
 }
 
 interface ChatWindowProps {
@@ -27,8 +28,12 @@ export default function ChatWindow({ messages, typingUser }: ChatWindowProps) {
             {messages.map((msg, index) => (
                 <div key={index} className="flex flex-col">
                     <span className="text-sm text-gray-500">{msg.sender}</span>
-                    <div className="bg-white p-2 rounded shadow-sm max-w-xs break-words">
+                    <div className="bg-white p-2 rounded shadow-sm max-w-xs wrap-break-word">
                         {msg.content}
+                        <span className="text-xs text-gray-400 absolute bottom-0 right-1">
+                            {msg.status === "delivered" && "✓"}
+                            {msg.status === "read" && "✓✓"}
+                        </span>
                     </div>
                 </div>
             ))}

@@ -4,12 +4,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import { api } from "@/services/api";
+import { useAuth } from "@/context/AuthContext";
+
 
 export default function LoginPage() {
     const router = useRouter();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
+
+    const { refreshAuth } = useAuth();
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -32,8 +36,10 @@ export default function LoginPage() {
             Cookies.set("username", user.username, { sameSite: "Lax" });
             Cookies.set("role", user.role, { sameSite: "Lax" });
 
+            refreshAuth();
+
             // Redirect based on role
-            if (user.role === "CUSTOMER") router.push("/");
+            if (user.role === "CUSTOMER") router.push("/customer");
             else if (user.role === "AGENT") router.push("/agent");
             else if (user.role === "SUPERVISOR") router.push("/supervisor");
             else router.push("/");
@@ -44,7 +50,7 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-tr from-blue-100 via-white to-blue-200">
+        <div className="min-h-screen flex items-center justify-center bg-linear-to-tr from-blue-100 via-white to-blue-200">
             <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-gray-200">
                 <h1 className="text-3xl font-bold text-center text-blue-700 mb-6">Login</h1>
                 <form onSubmit={handleLogin} className="space-y-4">

@@ -1,29 +1,13 @@
-'use client'
+'use client';
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import Cookies from "js-cookie";
+import { useAuth } from "@/context/AuthContext";
 import { api } from "@/services/api";
+import Cookies from "js-cookie";
 
 export default function Navbar() {
     const router = useRouter();
-    const [username, setUsername] = useState("");
-    const [role, setRole] = useState("");
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        const cookieUsername = Cookies.get("username");
-        const cookieRole = Cookies.get("role");
-
-        if (!cookieUsername || !cookieRole) {
-            router.push("/login");
-            return;
-        }
-
-        setUsername(cookieUsername);
-        setRole(cookieRole);
-        setLoading(false);
-    }, [router]);
+    const { username, role, refreshAuth, isAuthenticated } = useAuth();
 
     const handleLogout = async () => {
         try {
@@ -33,24 +17,32 @@ export default function Navbar() {
         } finally {
             Cookies.remove("username");
             Cookies.remove("role");
+            refreshAuth(); // 👈 immediately updates navbar
             router.push("/login");
         }
     };
 
-    if (loading) return null;
-
     return (
         <nav className="bg-blue-500 text-white px-6 py-3 flex items-center justify-between shadow-md">
-            <div className="text-xl font-semibold cursor-pointer" onClick={() => router.push("/")}>
+            <div
+                className="text-xl font-semibold cursor-pointer"
+                onClick={() => router.push("/")}
+            >
                 Support<span className="font-light">Chat</span>
             </div>
 
             <div className="flex items-center space-x-4">
-                <span className="text-sm bg-blue-600 px-3 py-1 rounded-full">{role || "USER"}</span>
-                <span className="text-sm">{username || "User"}</span>
+                <span className="text-sm bg-blue-600 px-3 py-1 rounded-full">
+                    {role || "GUEST"}
+                </span>
+                <span className="text-sm">{username || "Guest"}</span>
                 <button
                     onClick={handleLogout}
-                    className="bg-white text-blue-500 font-semibold px-3 py-1 rounded hover:bg-blue-100 transition"
+                    disabled={!isAuthenticated}
+                    className={`font-semibold px-3 py-1 rounded transition ${isAuthenticated
+                            ? "bg-white text-blue-500 hover:bg-blue-100"
+                            : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                        }`}
                 >
                     Logout
                 </button>

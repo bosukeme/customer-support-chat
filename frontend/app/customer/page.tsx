@@ -17,18 +17,23 @@ export default function CustomerHomePage() {
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
+
     const fetchConversations = async () => {
         try {
             const data = await chatApi.getConversations()
             setConversations(data);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error fetching conversations:", err);
+            if (err.response?.status === 401 || err.response?.status === 403) {
+                router.push("/login");
+            }
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
+        router.refresh();
         fetchConversations();
     }, []);
 
@@ -45,7 +50,6 @@ export default function CustomerHomePage() {
 
     return (
         <div className="min-h-screen flex flex-col bg-blue-100">
-            <Navbar />
 
             <main className="flex flex-col items-center flex-1 p-6">
                 <h1 className="text-3xl font-bold text-blue-700 mb-6">

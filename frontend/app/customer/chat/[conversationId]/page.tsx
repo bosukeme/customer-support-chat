@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import ChatWindow from "@/components/ChatWindow";
 import ChatInput from "@/components/ChatInput";
-import Navbar from "@/components/Navbar";
 
 import { chatApi } from "@/services/api";
 
@@ -15,9 +15,12 @@ interface Message {
     content?: string;
     type?: string;   // For typing events
     user?: string;
+    status: string
 }
 
 export default function CustomerChatPage() {
+    const router = useRouter();
+
     const { conversationId } = useParams();
     const [messages, setMessages] = useState<Message[]>([]);
     const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -30,8 +33,15 @@ export default function CustomerChatPage() {
         try {
             const data = await chatApi.getMessages(conversationId);
             setMessages(data);
-        } catch (err) {
-            console.error("Failed to fetch messages:", err);
+        } catch (err: any) {
+            if (err.response?.status === 403) {
+                console.warn("Access denied — redirecting to login.");
+                router.push("/login");
+            } else {
+                console.error("Failed to fetch conversations:", err);
+            }
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -103,7 +113,6 @@ export default function CustomerChatPage() {
 
     return (
         <div className="min-h-screen flex flex-col bg-blue-100">
-            <Navbar />
             <main className="flex flex-col items-center justify-center flex-1 p-4">
                 <div className="w-full max-w-2xl flex flex-col h-[80vh]">
                     <h1 className="text-3xl font-bold text-blue-700 text-center mb-4">

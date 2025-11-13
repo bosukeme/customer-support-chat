@@ -25,7 +25,7 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-tr from-blue-100 via-white to-blue-200">
+        <div className="min-h-screen flex items-center justify-center bg-linear-to-tr from-blue-100 via-white to-blue-200">
             <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-gray-200">
                 <h1 className="text-3xl font-bold text-center text-blue-700 mb-6">Create Account</h1>
                 <form onSubmit={handleRegister} className="space-y-4">

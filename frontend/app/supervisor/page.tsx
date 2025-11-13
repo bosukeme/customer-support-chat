@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
 import ChatWindow from "@/components/ChatWindow";
 import ChatInput from "@/components/ChatInput";
 import { chatApi } from "@/services/api";
@@ -20,6 +19,7 @@ interface Message {
     content?: string;
     type?: string;
     user?: string;
+    status: string;
 }
 
 interface OnlineUser {
@@ -160,7 +160,6 @@ export default function SupervisorDashboard() {
 
     return (
         <div className="flex flex-col min-h-screen bg-blue-100">
-            <Navbar />
             <div className="flex flex-1">
                 {/* Sidebar */}
                 <div className="w-1/4 bg-white border-r border-blue-200 p-4 overflow-y-auto">
