@@ -3,8 +3,16 @@ from rest_framework import permissions
 
 class IsCustomer(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user.is_authenticated and \
-            request.user.role == "CUSTOMER"
+        print(request.user.is_authenticated)
+        print(request.user.role)
+
+        user = request.user
+
+        if not user.is_authenticated:
+            print("User is not authenticated (AnonymousUser)")
+            return False
+
+        return user.role == "CUSTOMER"
 
 
 class IsAgent(permissions.BasePermission):

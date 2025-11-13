@@ -23,7 +23,18 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 
+class LoginSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["username", "password"]
+
+
 class ListUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "email", "role"]
+
+
+class ProfileResponseSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    role = serializers.CharField()

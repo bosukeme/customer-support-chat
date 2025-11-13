@@ -1,10 +1,6 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from django.contrib.auth import get_user_model
-from .models import Conversation, Message
-
-User = get_user_model()
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -13,15 +9,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
                                 ['kwargs']
                                 ['conversation_id'])
 
-        self.group_name = f"conversation_{self.conversation_id}"
+        print(self.conversation_id)
 
+        self.group_name = f"conversation_{self.conversation_id}"
         user = self.scope['user']
+        print(user)
         if not user.is_authenticated:
             await self.close()
             return
 
-        allowed = await self.user_in_conversation(user, self.conversation_id)
-        if not allowed:
+        can_join = await self.user_can_join(user, self.conversation_id)
+
+        if not can_join:
             await self.close()
             return
 
@@ -32,6 +31,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
+        await self.channel_layer.group_send(
+            self.group_name,
+            {
+                "type": "chat.join",
+                "user": user.username,
+                "role": "supervisor" if user.role ==
+                "SUPERVISOR" else user.role.lower(),
+            },
+        )
+
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(
             self.group_name,
@@ -40,45 +49,125 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         data = json.loads(text_data)
-        message = data.get("message", "")
         user = self.scope["user"]
+        msg_type = data.get("type")
 
-        if message.strip() == "":
+        print(user)
+
+        if msg_type in ["typing.start", "typing.stop"]:
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    "type": "chat.typing",
+                    "event": msg_type,
+                    "user": user.username,
+                },
+            )
             return
 
-        # Save message to DB
-        msg_obj = await self.save_message(user, self.conversation_id, message)
+        if msg_type == "message":
+            message = data.get("message", "").strip()
 
-        # Broadcast message to group
-        await self.channel_layer.group_send(
-            self.group_name,
-            {
-                "type": "chat_message",
-                "message": message,
-                "sender": user.username,
-                "timestamp": msg_obj.timestamp.isoformat(),
-            }
-        )
+            if not message:
+                return
+
+            # Save message to DB
+            msg_obj = await self.save_message(user, self.conversation_id,
+                                              message)
+
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    "type": "chat.message",
+                    "content": message,
+                    "sender": user.username,
+                    "timestamp": msg_obj.timestamp.isoformat(),
+                },
+            )
+
+    async def chat_typing(self, event):
+        await self.send(text_data=json.dumps({
+            "type": event["event"],  # typing.start / typing.stop
+            "user": event["user"],
+        }))
 
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
-            "message": event["message"],
+            "type": "message",
+            "content": event["content"],
             "sender": event["sender"],
             "timestamp": event["timestamp"],
         }))
 
+    async def chat_join(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "user.join",
+            "user": event["user"],
+            "role": event["role"],
+        }))
+
     @database_sync_to_async
     def save_message(self, user, conversation_id, message):
+        from .models import Conversation, Message
+
         conversation = Conversation.objects.get(id=conversation_id)
         return Message.objects.create(conversation=conversation, sender=user,
                                       content=message)
 
     @database_sync_to_async
-    def user_in_conversation(self, user, conversation_id):
+    def user_can_join(self, user, conversation_id):
+        from .models import Conversation
         try:
-            convo = Conversation.objects.get(id=conversation_id)
-            return convo.customer == user or convo.agent == user \
-                or user.role == "SUPERVISOR"
-
+            conversation = Conversation.objects.get(id=conversation_id)
+            # Supervisors can join ANY conversation
+            if user.role == "SUPERVISOR":
+                return True
+            if user.role == "AGENT" and conversation.agent == user:
+                return True
+            if user.role == "CUSTOMER" and conversation.customer == user:
+                return True
+            return False
         except Conversation.DoesNotExist:
             return False
+
+    # @database_sync_to_async
+    # def user_in_conversation(self, user, conversation_id):
+    #     from .models import Conversation
+
+    #     try:
+    #         convo = Conversation.objects.get(id=conversation_id)
+    #         return convo.customer == user or convo.agent == user \
+    #             or user.role == "SUPERVISOR"
+
+    #     except Conversation.DoesNotExist:
+    #         return False
+
+
+class AgentConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.agent_id = self.scope["user"].id
+        self.group_name = f"agent_{self.agent_id}"
+
+        if not self.scope["user"].is_authenticated or \
+                self.scope["user"].role != "AGENT":
+            await self.close()
+            return
+
+        await self.channel_layer.group_add(
+            self.group_name,
+            self.channel_name
+        )
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(
+            self.group_name,
+            self.channel_name
+        )
+
+    async def new_conversation(self, event):
+        await self.send_json({
+            "type": "new_conversation",
+            "conversation_id": event["conversation_id"],
+            "customer": event["customer"]
+        })
